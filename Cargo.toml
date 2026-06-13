@@ -8,3 +8,4 @@ rand= "0.10.1"
 image = "0.25.10"
 tracing = "0.1.44"
 tracing-subscriber = {version = "0.3.23", features = [ "env-filter"] }
+macroquad = "0.4.5"
