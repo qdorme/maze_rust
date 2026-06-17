@@ -5,7 +5,7 @@ use macroquad::prelude::{
 use rand::RngExt;
 use std::env;
 use std::ptr::slice_from_raw_parts;
-use tracing::info;
+use tracing::{info, debug};
 
 const NORTH: u8 = 0b00000001;
 const EAST: u8 = 0b00000010;
@@ -22,6 +22,10 @@ struct Maze {
     height: u32,
     walls: Vec<Vec<u8>>,
     paths: Vec<(u32, u32)>,
+    structure_done: bool,
+    entry: Option<(u32, u32)>,
+    exit: Option<(u32, u32)>,
+    candidate: Option<(u32, u32)>,
 }
 
 impl Maze {
@@ -31,6 +35,10 @@ impl Maze {
             height,
             walls: vec![vec![0b00001111; width as usize]; height as usize],
             paths: vec![],
+            structure_done: false,
+            entry: None,
+            exit: None,
+            candidate: None,
         }
     }
 
@@ -62,6 +70,11 @@ impl Maze {
             self.paths.push((cell.0, cell.1));
         } else {
             self.paths.pop();
+            if self.paths.is_empty() {
+                self.structure_done = true;
+                self.paths.push((0, 0));
+                self.candidate = None;
+            }
         }
     }
 
@@ -100,27 +113,81 @@ impl Maze {
         }
     }
 
-    pub fn find_entry(&mut self, starting_cell: (u32, u32)) -> Option<(u32, u32)> {
-        self.walls[starting_cell.1 as usize][starting_cell.0 as usize] &= VISITED;
-        let mut neighbor_cells = self.choose_unvisited_neighbor(starting_cell);
+    pub fn find_entry_by_step(&mut self) -> Option<(u32, u32)> {
+        let mut next_cells = vec![];
+        let mut entry_candidates = vec![];
 
-        None
+        self.paths.clone().iter().for_each(|c| {
+            self.walls[c.1 as usize][c.0 as usize] &= !CURRENT;
+            self.choose_unvisited_neighbor((*c).clone())
+                .iter()
+                .for_each(|n| {
+                    next_cells.push((*n).clone());
+                });
+        });
+        self.paths.clear();
+        next_cells.iter().for_each(|c| {
+            self.walls[c.1 as usize][c.0 as usize] |= CURRENT;
+            self.walls[c.1 as usize][c.0 as usize] |= VISITED;
+            self.paths.push((*c).clone());
+            if c.0 == 0 || c.1 == 0 || c.0 == self.width - 1 || c.1 == self.height - 1 {
+                entry_candidates.push((*c).clone());
+            }
+        });
+        if !entry_candidates.is_empty() {
+            self.candidate =
+                Some(entry_candidates[rand::rng().random_range(0..entry_candidates.len())]);
+        }
+        if self.paths.is_empty() {
+            let found = self.candidate.take();
+            info!("Entry found {},{}", found.unwrap().0, found.unwrap().1);
+            self.paths.push(found.unwrap());
+            self.candidate = None;
+            self.walls.iter_mut().for_each(|row| {
+                row.iter_mut().for_each(|cell| {
+                    *cell &= !VISITED;
+                })
+            });
+            self.walls[found.unwrap().1 as usize][found.unwrap().0 as usize] |= ENTRY;
+            found
+        } else {
+            None
+        }
     }
 
     fn choose_unvisited_neighbor(&self, current_cell: (u32, u32)) -> Vec<(u32, u32)> {
         let mut neighbors = vec![];
 
         let (x, y) = current_cell;
-        if y > 0 && self.walls[(y - 1) as usize][x as usize] & VISITED != VISITED {
+
+        debug!("Choosing unvisited neighbors for cell ({}, {})", x, y);
+        debug!("self.walls[y as usize][x as usize] & NORTH: {:08b}", self.walls[y as usize][x as usize] & NORTH);
+        debug!("self.walls[y as usize][x as usize] & NORTH != NORTH {}", self.walls[y as usize][x as usize] & NORTH != NORTH);
+        debug!("self.walls[y as usize][x as usize] & SOUTH: {:08b}", self.walls[y as usize][x as usize] & SOUTH);
+        debug!("self.walls[y as usize][x as usize] & SOUTH != SOUTH {}", self.walls[y as usize][x as usize] & SOUTH != SOUTH);
+        debug!("self.walls[y as usize][x as usize] & EAST: {:08b}", self.walls[y as usize][x as usize] & EAST);
+        debug!("self.walls[y as usize][x as usize] & EAST != EAST {}", self.walls[y as usize][x as usize] & EAST != EAST);
+        debug!("self.walls[y as usize][x as usize] & WEST: {:08b}", self.walls[y as usize][x as usize] & WEST);
+        debug!("self.walls[y as usize][x as usize] & WEST != WEST {}", self.walls[y as usize][x as usize] & WEST != WEST);
+
+        if (self.walls[y as usize][x as usize] & NORTH != NORTH)
+            && (self.walls[(y-1) as usize][x as usize] & VISITED != VISITED)
+        {
             neighbors.push((x, y - 1));
         }
-        if y + 1 < self.height && self.walls[(y + 1) as usize][x as usize] & &VISITED != VISITED {
+        if (self.walls[y as usize][x as usize] & SOUTH != SOUTH)
+            && (self.walls[(y+1) as usize][x as usize] & VISITED != VISITED)
+        {
             neighbors.push((x, y + 1));
         }
-        if x > 0 && self.walls[y as usize][(x - 1) as usize] & &VISITED != VISITED {
+        if (self.walls[y as usize][x as usize] & WEST != WEST)
+            && (self.walls[y as usize][(x-1) as usize] & VISITED != VISITED)
+        {
             neighbors.push((x - 1, y));
         }
-        if x + 1 < self.width && self.walls[y as usize][(x + 1) as usize] & &VISITED != VISITED {
+        if (self.walls[y as usize][x as usize] & EAST != EAST)
+            && (self.walls[y as usize][(x+1) as usize] & VISITED != VISITED)
+        {
             neighbors.push((x + 1, y));
         }
 
@@ -165,6 +232,20 @@ fn generate_image(maze: &Maze) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
                     img.put_pixel(corners.0.0, y, Rgb([0, 0, 0]));
                 })
             }
+            if *cell & VISITED == VISITED {
+                (corners.0.0 + 1..corners.2.0).for_each(|x| {
+                    (corners.0.1 + 1..corners.2.1).for_each(|y| {
+                        img.put_pixel(x, y, Rgb([200, 200, 200]));
+                    })
+                })
+            }
+            if *cell & ENTRY == ENTRY {
+                (corners.0.0 + 1..corners.2.0).for_each(|x| {
+                    (corners.0.1 + 1..corners.2.1).for_each(|y| {
+                        img.put_pixel(x, y, Rgb([255, 200, 200]));
+                    })
+                });
+            }
         })
     });
 
@@ -174,10 +255,10 @@ fn generate_image(maze: &Maze) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
 
 #[macroquad::main("Maze")]
 async fn main() {
-    tracing_subscriber::fmt::fmt().init();
+    tracing_subscriber::fmt::fmt().with_env_filter("info").init();
 
-    let mut width = 30;
-    let mut height = 30;
+    let mut width = 10;
+    let mut height = 10;
 
     let args: Vec<String> = env::args().collect();
     if args.len() == 3 {
@@ -196,20 +277,20 @@ async fn main() {
         random.random_range(0..maze.height),
     );
 
-    info!("Starting at cell: {:?}", starting_cell);
+    debug!("Starting at cell: {:?}", starting_cell);
     maze.paths.push(starting_cell);
 
     loop {
-        if !maze.paths.is_empty() {
-            info!("Generation phase");
+        if !maze.structure_done {
 
             maze.generate_maze_by_step();
-        } else {
-            info!("Finding path phase");
+        } else if maze.entry.is_none() {
 
-            maze.find_entry(starting_cell.clone());
+            maze.entry = maze.find_entry_by_step();
+        } else if maze.exit.is_none() {
+
+            maze.exit = maze.find_entry_by_step();
         }
-        info!("Image generation phase");
 
         let img = generate_image(&maze);
 
