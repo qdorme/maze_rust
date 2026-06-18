@@ -1,6 +1,7 @@
 use image::{ImageBuffer, Rgb, RgbImage};
 use macroquad::prelude::{
     BLACK, FilterMode, Texture2D, WHITE, clear_background, draw_texture, next_frame,
+    request_new_screen_size,
 };
 use rand::RngExt;
 use std::env;
@@ -15,6 +16,7 @@ const VISITED: u8 = 0b00010000;
 const CURRENT: u8 = 0b00100000;
 const ENTRY: u8 = 0b01000000;
 const EXIT: u8 = 0b10000000; // Fix 8 : constante distincte pour la sortie
+const CELL_SIZE: u32 = 10;
 
 struct Maze {
     width: u32,
@@ -191,20 +193,19 @@ impl Maze {
 }
 
 fn generate_image(maze: &Maze) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
-    let square_size = 10;
     let mut img = RgbImage::new(
-        (maze.width + 2) * square_size,
-        (maze.height + 2) * square_size,
+        (maze.width + 2) * CELL_SIZE,
+        (maze.height + 2) * CELL_SIZE,
     );
     img.fill(255);
 
     maze.walls.iter().enumerate().for_each(|(y, row)| {
         row.iter().enumerate().for_each(|(x, cell)| {
             let corners = (
-                ((x + 1) as u32 * square_size, (y + 1) as u32 * square_size),
-                ((x + 2) as u32 * square_size, (y + 1) as u32 * square_size),
-                ((x + 2) as u32 * square_size, (y + 2) as u32 * square_size),
-                ((x + 1) as u32 * square_size, (y + 2) as u32 * square_size),
+                ((x + 1) as u32 * CELL_SIZE, (y + 1) as u32 * CELL_SIZE),
+                ((x + 2) as u32 * CELL_SIZE, (y + 1) as u32 * CELL_SIZE),
+                ((x + 2) as u32 * CELL_SIZE, (y + 2) as u32 * CELL_SIZE),
+                ((x + 1) as u32 * CELL_SIZE, (y + 2) as u32 * CELL_SIZE),
             );
 
             if *cell & NORTH == NORTH {
@@ -289,6 +290,11 @@ async fn main() {
         eprintln!("Les dimensions doivent être >= 1");
         std::process::exit(1);
     }
+
+    request_new_screen_size(
+        ((width + 2) * CELL_SIZE) as f32,
+        ((height + 2) * CELL_SIZE) as f32,
+    );
 
     info!("Starting maze generation ({}, {})", width, height);
     info!("Initialization phase");
